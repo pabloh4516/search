@@ -1,0 +1,6 @@
+.media/
+download.sh
+RELATORIO.md
+__pycache__/
+*.pyc
+.env

@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GCL Explorer</title>
+<style>
+:root{--bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;--accent:#00d4ff;--accent2:#7b2fff;--text:#e0e0e0;--text2:#888;--green:#00ff88;--red:#ff4444;--orange:#ffaa00;--border:#2a2a3e;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,system-ui,'Segoe UI',sans-serif;min-height:100vh;}
+a{color:var(--accent);text-decoration:none;}
+a:hover{text-decoration:underline;}
+
+.header{background:var(--bg2);border-bottom:1px solid var(--border);padding:16px 20px;position:sticky;top:0;z-index:100;}
+.header h1{font-size:20px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:12px;}
+.mode-tabs{display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border);}
+.mode-tab{background:none;border:none;border-bottom:2px solid transparent;padding:10px 20px;color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;}
+.mode-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+.search-row{display:flex;gap:8px;flex-wrap:wrap;}
+.search-row input,.search-row select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;}
+.search-row input:focus,.search-row select:focus{border-color:var(--accent);}
+.search-row input{flex:1;min-width:200px;}
+.search-row select{min-width:140px;}
+.btn{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;padding:10px 20px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
+.btn:hover{opacity:.9;}
+.btn:disabled{opacity:.4;}
+.btn-sm{padding:6px 12px;font-size:11px;border-radius:6px;}
+.btn-outline{background:none;border:1px solid var(--border);color:var(--text2);}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent);}
+.btn-dl{background:var(--green);color:#000;}
+.btn-red{background:var(--red);color:#fff;}
+.btn-orange{background:var(--orange);color:#000;}
+
+.tabs{display:flex;gap:0;margin-top:10px;}
+.tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;color:var(--text2);font-size:13px;cursor:pointer;}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.tab .cnt{font-size:10px;background:var(--bg3);padding:1px 6px;border-radius:8px;margin-left:4px;}
+
+.main{max-width:1200px;margin:0 auto;padding:16px;}
+.status{padding:10px 0;font-size:13px;color:var(--text2);border-bottom:1px solid var(--border);margin-bottom:12px;}
+.status strong{color:var(--accent);}
+
+/* Profiles */
+.profiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;}
+.profile-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:border-color .2s;}
+.profile-card:hover{border-color:var(--accent);}
+.profile-card h3{font-size:15px;margin-bottom:4px;}
+.profile-card .meta{font-size:11px;color:var(--text2);}
+.profile-card .meta span{margin-right:8px;}
+
+/* Media grid */
+.media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;}
+.media-card{background:var(--bg2);border-radius:8px;overflow:hidden;position:relative;cursor:pointer;transition:transform .15s;}
+.media-card:hover{transform:scale(1.02);}
+.media-card img{width:100%;height:200px;object-fit:cover;display:block;background:var(--bg3);}
+.media-card video{width:100%;height:200px;object-fit:cover;display:block;background:var(--bg3);}
+.media-card .info{padding:6px 8px;}
+.media-card .info .title{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.media-card .info .details{font-size:10px;color:var(--text2);margin-top:2px;display:flex;justify-content:space-between;}
+.badge{position:absolute;top:6px;left:6px;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;}
+.badge-video{background:var(--red);color:#fff;}
+.badge-image{background:var(--accent);color:#000;}
+.badge-date{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.7);color:var(--text);font-size:9px;padding:2px 6px;border-radius:4px;}
+
+/* Users */
+.users-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;}
+.user-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;transition:border-color .2s;}
+.user-card:hover{border-color:var(--accent);}
+.user-card h4{font-size:14px;margin-bottom:4px;}
+.user-card .id{font-size:11px;color:var(--text2);}
+
+/* Scanner */
+.scan-panel{display:none;}
+.scan-panel.show{display:block;}
+.scan-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+.scan-row input{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;width:140px;}
+.scan-row input:focus{border-color:var(--accent);}
+.scan-row label{font-size:12px;color:var(--text2);}
+.progress-bar{width:100%;height:6px;background:var(--bg3);border-radius:3px;margin:10px 0;overflow:hidden;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .3s;width:0%;}
+.scan-results{margin-top:12px;}
+.scan-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;}
+.scan-card.hidden-card{border-color:var(--red);background:rgba(255,68,68,.05);}
+.scan-card.found-card{border-color:var(--green);background:rgba(0,255,136,.05);}
+.scan-card h4{font-size:14px;margin-bottom:4px;}
+.scan-card .meta{font-size:11px;color:var(--text2);margin-bottom:4px;}
+.scan-card .urls{font-size:10px;margin-top:6px;}
+.scan-card .urls a{display:block;margin:2px 0;color:var(--accent);word-break:break-all;}
+.scan-card .url-status{font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;}
+.url-ok{background:rgba(0,255,136,.15);color:var(--green);}
+.url-fail{background:rgba(255,68,68,.1);color:var(--red);}
+.scan-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin:8px 0;padding:10px;background:var(--bg2);border-radius:8px;}
+.scan-stats .stat{display:flex;flex-direction:column;align-items:center;}
+.scan-stats .stat-num{font-size:20px;font-weight:700;}
+.scan-stats .stat-label{font-size:10px;color:var(--text2);}
+
+/* Lightbox */
+.lb{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.95);z-index:1000;justify-content:center;align-items:center;flex-direction:column;}
+.lb.show{display:flex;}
+.lb-close{position:fixed;top:12px;right:12px;color:#fff;font-size:28px;cursor:pointer;background:rgba(255,255,255,.1);width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:1001;}
+.lb img,.lb video{max-width:90vw;max-height:80vh;border-radius:8px;}
+.lb .lb-info{margin-top:12px;text-align:center;max-width:90vw;}
+.lb .lb-info a{font-size:12px;margin:0 8px;}
+.lb .lb-title{font-size:13px;color:var(--text2);margin-bottom:6px;}
+
+.empty{text-align:center;padding:60px;color:var(--text2);}
+.empty h3{color:var(--text);margin-bottom:8px;}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading{text-align:center;padding:40px;}
+.dl-all{margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+
+@media(max-width:600px){
+  .media-grid{grid-template-columns:repeat(2,1fr);}
+  .media-card img,.media-card video{height:140px;}
+  .profiles{grid-template-columns:1fr;}
+  .scan-row input{width:100px;}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>GCL Explorer</h1>
+  <div class="mode-tabs">
+    <button class="mode-tab active" onclick="setMode('search',this)">Buscar</button>
+    <button class="mode-tab" onclick="setMode('scanner',this)">Scanner Ocultos</button>
+  </div>
+
+  <!-- SEARCH MODE -->
+  <div id="searchPanel">
+    <div class="search-row">
+      <input id="searchInput" placeholder="Nome do perfil... (ex: daniela-pimentel)" autofocus>
+      <select id="searchType">
+        <option value="media">Midias</option>
+        <option value="profiles">Perfis</option>
+        <option value="users">Usuarios</option>
+      </select>
+      <button class="btn" id="searchBtn" onclick="doSearch()">Buscar</button>
+    </div>
+    <div class="tabs" id="tabsRow" style="display:none">
+      <button class="tab active" onclick="setTab('all',this)">Tudo <span class="cnt" id="cntAll">0</span></button>
+      <button class="tab" onclick="setTab('image',this)">Fotos <span class="cnt" id="cntImg">0</span></button>
+      <button class="tab" onclick="setTab('video',this)">Videos <span class="cnt" id="cntVid">0</span></button>
+    </div>
+  </div>
+
+  <!-- SCANNER MODE -->
+  <div id="scannerPanel" class="scan-panel">
+    <div class="scan-row">
+      <label>ID Inicio:</label>
+      <input id="scanStart" type="number" placeholder="1807478" value="1807478">
+      <label>ID Fim:</label>
+      <input id="scanEnd" type="number" placeholder="1807650" value="1807650">
+      <label>Filtro nome:</label>
+      <input id="scanFilter" placeholder="(opcional)" style="width:160px">
+      <button class="btn btn-red" id="scanBtn" onclick="startScan()">Escanear</button>
+      <button class="btn btn-outline btn-sm" onclick="quickScan()">Scan Rapido (ultimos 500)</button>
+    </div>
+    <div class="progress-bar" id="scanProgress" style="display:none"><div class="progress-fill" id="scanFill"></div></div>
+  </div>
+</div>
+
+<div class="main">
+  <div id="statusBar" class="status" style="display:none"></div>
+  <div id="dlBar" class="dl-all" style="display:none"></div>
+  <div id="results">
+    <div class="empty">
+      <div style="font-size:48px;opacity:.3;margin-bottom:12px">&#128270;</div>
+      <h3>GCL API Explorer</h3>
+      <p>Busque por nome para ver todas as midias (fotos + videos) de qualquer perfil.</p>
+      <p style="margin-top:12px;font-size:12px;color:var(--red)">Scanner Ocultos: detecta midias com status privado via bypass oEmbed</p>
+      <p style="margin-top:4px;font-size:12px;color:var(--accent)">API REST publica do WordPress</p>
+    </div>
+  </div>
+</div>
+
+<div class="lb" id="lb" onclick="if(event.target===this)closeLB()">
+  <div class="lb-close" onclick="closeLB()">&times;</div>
+  <div id="lbContent"></div>
+  <div class="lb-info" id="lbInfo"></div>
+</div>
+
+<script>
+const API='/api/wp/v2';
+let allMedia=[],curTab='all',lbIdx=0,curMode='search';
+
+document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch()});
+
+function setMode(mode,el){
+  curMode=mode;
+  document.querySelectorAll('.mode-tab').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('searchPanel').style.display=mode==='search'?'block':'none';
+  document.getElementById('scannerPanel').classList.toggle('show',mode==='scanner');
+  if(mode==='scanner'){
+    document.getElementById('tabsRow').style.display='none';
+    document.getElementById('dlBar').style.display='none';
+  }
+}
+
+// ============ SEARCH MODE ============
+
+async function doSearch(){
+  const q=document.getElementById('searchInput').value.trim();
+  const type=document.getElementById('searchType').value;
+  if(!q&&type!=='users'){alert('Digite um nome');return;}
+
+  const btn=document.getElementById('searchBtn');
+  btn.disabled=true;btn.textContent='...';
+  document.getElementById('results').innerHTML='<div class="loading"><div class="spinner"></div><p>Buscando na API...</p></div>';
+  document.getElementById('tabsRow').style.display='none';
+  document.getElementById('statusBar').style.display='none';
+  document.getElementById('dlBar').style.display='none';
+
+  try{
+    if(type==='media') await searchMedia(q);
+    else if(type==='profiles') await searchProfiles(q);
+    else if(type==='users') await searchUsers();
+  }catch(e){
+    document.getElementById('results').innerHTML='<div class="empty"><p>Erro: '+e.message+'</p></div>';
+  }
+  btn.disabled=false;btn.textContent='Buscar';
+}
+
+async function searchMedia(q){
+  let page=1,all=[];
+  while(true){
+    const r=await fetch(API+'/media?search='+encodeURIComponent(q)+'&per_page=100&page='+page);
+    if(!r.ok)break;
+    const data=await r.json();
+    if(!data.length)break;
+    const filtered=data.filter(m=>(m.source_url||'').toLowerCase().includes(q.toLowerCase().replace(/\s+/g,'-')));
+    all.push(...filtered);
+    const total=r.headers.get('X-WP-TotalPages');
+    if(!total||page>=parseInt(total))break;
+    page++;
+  }
+  allMedia=all;
+  const images=all.filter(m=>m.mime_type&&m.mime_type.startsWith('image'));
+  const videos=all.filter(m=>m.mime_type&&m.mime_type.startsWith('video'));
+
+  document.getElementById('cntAll').textContent=all.length;
+  document.getElementById('cntImg').textContent=images.length;
+  document.getElementById('cntVid').textContent=videos.length;
+  document.getElementById('tabsRow').style.display='flex';
+  document.getElementById('statusBar').style.display='block';
+  document.getElementById('statusBar').innerHTML='<strong>'+all.length+'</strong> midias (<strong>'+images.length+'</strong> fotos, <strong>'+videos.length+'</strong> videos) para "<strong>'+esc(q)+'</strong>"';
+
+  document.getElementById('dlBar').style.display='flex';
+  document.getElementById('dlBar').innerHTML=
+    '<button class="btn btn-sm btn-dl" onclick="downloadAll(\'all\')">Baixar Tudo ('+all.length+')</button>'+
+    '<button class="btn btn-sm btn-dl" onclick="downloadAll(\'image\')">Baixar Fotos ('+images.length+')</button>'+
+    '<button class="btn btn-sm btn-dl" onclick="downloadAll(\'video\')">Baixar Videos ('+videos.length+')</button>'+
+    '<button class="btn btn-sm btn-outline" onclick="copyUrls()">Copiar URLs</button>';
+
+  curTab='all';
+  renderMedia(all);
+}
+
+function setTab(t,el){
+  curTab=t;
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  let items=allMedia;
+  if(t==='image')items=allMedia.filter(m=>m.mime_type&&m.mime_type.startsWith('image'));
+  if(t==='video')items=allMedia.filter(m=>m.mime_type&&m.mime_type.startsWith('video'));
+  renderMedia(items);
+}
+
+function renderMedia(items){
+  if(!items.length){document.getElementById('results').innerHTML='<div class="empty"><p>Nenhuma midia encontrada.</p></div>';return;}
+  items.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  let h='<div class="media-grid">';
+  items.forEach((m,i)=>{
+    const isVideo=m.mime_type&&m.mime_type.startsWith('video');
+    const url=m.source_url||'';
+    const title=m.title?.rendered||m.slug||'';
+    const date=m.date?m.date.split('T')[0]:'';
+    const size=m.media_details?.filesize?formatSize(m.media_details.filesize):'';
+    const dur=m.media_details?.length_formatted||'';
+    const w=m.media_details?.width||'';
+    const ht=m.media_details?.height||'';
+    h+='<div class="media-card" onclick="openLB('+i+')">';
+    if(isVideo){
+      h+='<span class="badge badge-video">VIDEO '+dur+'</span>';
+      const thumb=m.media_details?.sizes?.thumbnail?.source_url||'';
+      if(thumb)h+='<img src="'+esc(thumb)+'" onerror="this.style.display=\'none\'" loading="lazy">';
+      else h+='<video src="'+esc(url)+'" preload="metadata" muted></video>';
+    }else{
+      h+='<span class="badge badge-image">FOTO</span>';
+      const thumbUrl=m.media_details?.sizes?.medium?.source_url||m.media_details?.sizes?.thumbnail?.source_url||url;
+      h+='<img src="'+esc(thumbUrl)+'" onerror="this.src=\''+esc(url)+'\'" loading="lazy">';
+    }
+    h+='<span class="badge-date">'+date+'</span>';
+    h+='<div class="info"><div class="title">'+esc(title)+'</div>';
+    h+='<div class="details"><span>'+w+'x'+ht+'</span><span>'+size+'</span></div></div></div>';
+  });
+  h+='</div>';
+  document.getElementById('results').innerHTML=h;
+}
+
+async function searchProfiles(q){
+  const r=await fetch(API+'/job-listings?search='+encodeURIComponent(q)+'&per_page=100');
+  const data=await r.json();
+  document.getElementById('statusBar').style.display='block';
+  document.getElementById('statusBar').innerHTML='<strong>'+data.length+'</strong> perfis para "<strong>'+esc(q)+'</strong>"';
+  if(!data.length){document.getElementById('results').innerHTML='<div class="empty"><p>Nenhum perfil encontrado.</p></div>';return;}
+  let h='<div class="profiles">';
+  data.forEach(p=>{
+    const title=p.title?.rendered||'';
+    const date=p.date?p.date.split('T')[0]:'';
+    const mod=p.modified?p.modified.split('T')[0]:'';
+    const link=p.link||'';
+    h+='<div class="profile-card" onclick="loadProfile(\''+esc(title)+'\')">';
+    h+='<h3>'+title+'</h3>';
+    h+='<div class="meta"><span>ID: '+p.id+'</span><span>Criado: '+date+'</span><span>Atualizado: '+mod+'</span></div>';
+    h+='<div class="meta"><a href="'+esc(link)+'" target="_blank" onclick="event.stopPropagation()">Ver no site</a></div>';
+    h+='</div>';
+  });
+  document.getElementById('results').innerHTML=h+'</div>';
+}
+
+function loadProfile(name){
+  document.getElementById('searchInput').value=name;
+  document.getElementById('searchType').value='media';
+  doSearch();
+}
+
+async function searchUsers(){
+  const r=await fetch(API+'/users?per_page=100');
+  const data=await r.json();
+  document.getElementById('statusBar').style.display='block';
+  document.getElementById('statusBar').innerHTML='<strong>'+data.length+'</strong> usuarios';
+  let h='<div class="users-grid">';
+  data.forEach(u=>{
+    h+='<div class="user-card" onclick="loadUserMedia('+u.id+',\''+esc(u.name)+'\')">';
+    h+='<h4>'+esc(u.name)+'</h4>';
+    h+='<div class="id">ID: '+u.id+' | slug: '+esc(u.slug)+'</div>';
+    h+='<div class="id"><a href="'+esc(u.link)+'" target="_blank" onclick="event.stopPropagation()">Ver pagina</a></div>';
+    h+='</div>';
+  });
+  document.getElementById('results').innerHTML=h+'</div>';
+}
+
+async function loadUserMedia(authorId,name){
+  document.getElementById('results').innerHTML='<div class="loading"><div class="spinner"></div><p>Carregando midias...</p></div>';
+  let page=1,all=[];
+  while(true){
+    const r=await fetch(API+'/media?author='+authorId+'&per_page=100&page='+page);
+    if(!r.ok)break;
+    const data=await r.json();
+    if(!data.length)break;
+    all.push(...data);
+    const total=r.headers.get('X-WP-TotalPages');
+    if(!total||page>=parseInt(total))break;
+    page++;
+  }
+  allMedia=all;
+  const images=all.filter(m=>m.mime_type&&m.mime_type.startsWith('image'));
+  const videos=all.filter(m=>m.mime_type&&m.mime_type.startsWith('video'));
+  document.getElementById('cntAll').textContent=all.length;
+  document.getElementById('cntImg').textContent=images.length;
+  document.getElementById('cntVid').textContent=videos.length;
+  document.getElementById('tabsRow').style.display='flex';
+  document.getElementById('statusBar').style.display='block';
+  document.getElementById('statusBar').innerHTML='<strong>'+all.length+'</strong> midias de <strong>'+esc(name)+'</strong>';
+  document.getElementById('dlBar').style.display='flex';
+  document.getElementById('dlBar').innerHTML='<button class="btn btn-sm btn-dl" onclick="downloadAll(\'all\')">Baixar Tudo ('+all.length+')</button><button class="btn btn-sm btn-outline" onclick="copyUrls()">Copiar URLs</button>';
+  curTab='all';
+  renderMedia(all);
+}
+
+// ============ SCANNER MODE ============
+
+let scanAbort=false;
+
+function quickScan(){
+  // Get latest media ID first, then scan last 500
+  fetch(API+'/media?per_page=1&orderby=id&order=desc').then(r=>r.json()).then(data=>{
+    if(data.length){
+      const latest=data[0].id;
+      document.getElementById('scanStart').value=latest-499;
+      document.getElementById('scanEnd').value=latest;
+      startScan();
+    }
+  });
+}
+
+async function startScan(){
+  const start=parseInt(document.getElementById('scanStart').value)||1;
+  const end=parseInt(document.getElementById('scanEnd').value)||start+100;
+  const filter=document.getElementById('scanFilter').value.trim().toLowerCase();
+  const btn=document.getElementById('scanBtn');
+
+  if(end-start>2000){alert('Maximo 2000 IDs por scan');return;}
+
+  btn.disabled=true;btn.textContent='Escaneando...';
+  scanAbort=false;
+  document.getElementById('scanProgress').style.display='block';
+  document.getElementById('scanFill').style.width='0%';
+  document.getElementById('statusBar').style.display='none';
+  document.getElementById('dlBar').style.display='none';
+  document.getElementById('results').innerHTML='<div class="loading"><div class="spinner"></div><p>Escaneando IDs '+start+' a '+end+'...</p></div>';
+
+  const batchSize=200;
+  let allHidden=[];
+  let totalPublic=0,totalNotFound=0,totalScanned=0;
+  const total=end-start+1;
+
+  for(let batchStart=start;batchStart<=end;batchStart+=batchSize){
+    if(scanAbort)break;
+    const batchEnd=Math.min(batchStart+batchSize-1,end);
+    try{
+      const r=await fetch('/scan-hidden?start='+batchStart+'&end='+batchEnd);
+      const data=await r.json();
+      allHidden.push(...data.hidden);
+      totalPublic+=data.public;
+      totalNotFound+=data.not_found;
+      totalScanned+=data.scanned;
+    }catch(e){console.error(e);}
+    const pct=Math.min(100,Math.round((totalScanned/total)*100));
+    document.getElementById('scanFill').style.width=pct+'%';
+  }
+
+  // Apply name filter
+  let filtered=allHidden;
+  if(filter){
+    filtered=allHidden.filter(h=>(h.title||'').toLowerCase().includes(filter)||(h.author||'').toLowerCase().includes(filter));
+  }
+
+  btn.disabled=false;btn.textContent='Escanear';
+  document.getElementById('scanFill').style.width='100%';
+
+  // Render results
+  let h='<div class="scan-stats">';
+  h+='<div class="stat"><div class="stat-num" style="color:var(--accent)">'+totalScanned+'</div><div class="stat-label">Escaneados</div></div>';
+  h+='<div class="stat"><div class="stat-num" style="color:var(--green)">'+totalPublic+'</div><div class="stat-label">Publicos</div></div>';
+  h+='<div class="stat"><div class="stat-num" style="color:var(--red)">'+allHidden.length+'</div><div class="stat-label">Ocultos</div></div>';
+  h+='<div class="stat"><div class="stat-num" style="color:var(--text2)">'+totalNotFound+'</div><div class="stat-label">Inexistentes</div></div>';
+  if(filter)h+='<div class="stat"><div class="stat-num" style="color:var(--orange)">'+filtered.length+'</div><div class="stat-label">Filtrados</div></div>';
+  h+='</div>';
+
+  if(filtered.length===0){
+    h+='<div class="empty"><p>Nenhuma midia oculta encontrada'+(filter?' para "'+esc(filter)+'"':'')+'.</p></div>';
+  }else{
+    h+='<div class="scan-results">';
+    filtered.forEach(item=>{
+      h+='<div class="scan-card hidden-card">';
+      h+='<h4>&#128274; '+esc(item.title||'Sem titulo')+'</h4>';
+      h+='<div class="meta">ID: <strong>'+item.id+'</strong> | Autor: <strong>'+esc(item.author||'?')+'</strong> | Status: <span style="color:var(--red)">OCULTO (401)</span></div>';
+      if(item.author_url)h+='<div class="meta"><a href="'+esc(item.author_url)+'" target="_blank">Pagina do autor</a></div>';
+      if(item.guessed_url&&item.guessed_url.length){
+        h+='<div class="urls"><strong>URLs possiveis:</strong>';
+        item.guessed_url.forEach(u=>{
+          h+='<a href="'+esc(u)+'" target="_blank">'+esc(u.split('/').pop())+'</a>';
+        });
+        h+='<button class="btn btn-sm btn-orange" style="margin-top:4px" onclick="testUrls(this,'+JSON.stringify(item.guessed_url).replace(/"/g,'&quot;')+')">Testar URLs</button>';
+        h+='</div>';
+      }
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+
+  document.getElementById('results').innerHTML=h;
+}
+
+async function testUrls(btn,urls){
+  btn.disabled=true;btn.textContent='Testando...';
+  const container=btn.parentElement;
+  let found=0;
+  for(const url of urls){
+    try{
+      const r=await fetch('/check-url?url='+encodeURIComponent(url));
+      const data=await r.json();
+      const links=container.querySelectorAll('a');
+      links.forEach(a=>{
+        if(a.href.endsWith(url.split('/').pop())||a.textContent===url.split('/').pop()){
+          if(data.exists){
+            a.innerHTML=a.textContent+' <span class="url-status url-ok">EXISTE ('+formatSize(data.size)+')</span>';
+            found++;
+          }else{
+            a.innerHTML=a.textContent+' <span class="url-status url-fail">404</span>';
+          }
+        }
+      });
+    }catch(e){}
+  }
+  btn.textContent=found>0?found+' encontrado(s)!':'Nenhum encontrado';
+  btn.disabled=false;
+}
+
+// ============ LIGHTBOX ============
+
+function openLB(idx){
+  const items=getFilteredItems();
+  if(idx<0||idx>=items.length)return;
+  lbIdx=idx;
+  const m=items[idx];
+  const isVideo=m.mime_type&&m.mime_type.startsWith('video');
+  const url=m.source_url||'';
+  const title=m.title?.rendered||'';
+  const date=m.date?m.date.split('T')[0]:'';
+  const size=m.media_details?.filesize?formatSize(m.media_details.filesize):'';
+  const w=m.media_details?.width||'';
+  const ht=m.media_details?.height||'';
+  let content='';
+  if(isVideo)content='<video src="'+esc(url)+'" controls autoplay style="max-width:90vw;max-height:80vh;border-radius:8px"></video>';
+  else content='<img src="'+esc(url)+'" style="max-width:90vw;max-height:80vh;border-radius:8px">';
+  document.getElementById('lbContent').innerHTML=content;
+  document.getElementById('lbInfo').innerHTML=
+    '<div class="lb-title">'+esc(title)+' | '+date+' | '+w+'x'+ht+' | '+size+'</div>'+
+    '<a href="'+esc(url)+'" target="_blank">Abrir</a>'+
+    '<a href="'+esc(url)+'" download>Baixar</a>'+
+    '<a href="javascript:void(0)" onclick="navLB(-1)">&larr; Anterior</a>'+
+    '<a href="javascript:void(0)" onclick="navLB(1)">Proximo &rarr;</a>'+
+    '<span style="font-size:11px;color:var(--text2);margin-left:8px">'+(idx+1)+'/'+items.length+'</span>';
+  document.getElementById('lb').classList.add('show');
+  document.body.style.overflow='hidden';
+}
+function closeLB(){document.getElementById('lb').classList.remove('show');document.getElementById('lbContent').innerHTML='';document.body.style.overflow='';}
+function navLB(dir){const items=getFilteredItems();let n=lbIdx+dir;if(n<0)n=items.length-1;if(n>=items.length)n=0;openLB(n);}
+function getFilteredItems(){
+  if(curTab==='image')return allMedia.filter(m=>m.mime_type&&m.mime_type.startsWith('image')).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  if(curTab==='video')return allMedia.filter(m=>m.mime_type&&m.mime_type.startsWith('video')).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return[...allMedia].sort((a,b)=>new Date(b.date)-new Date(a.date));
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLB();if(e.key==='ArrowLeft')navLB(-1);if(e.key==='ArrowRight')navLB(1);});
+
+// ============ UTILS ============
+
+function downloadAll(type){
+  let items=allMedia;
+  if(type==='image')items=items.filter(m=>m.mime_type&&m.mime_type.startsWith('image'));
+  if(type==='video')items=items.filter(m=>m.mime_type&&m.mime_type.startsWith('video'));
+  items.forEach((m,i)=>{setTimeout(()=>{const a=document.createElement('a');a.href=m.source_url;a.download='';a.target='_blank';document.body.appendChild(a);a.click();a.remove();},i*300);});
+}
+function copyUrls(){
+  const urls=allMedia.map(m=>m.source_url).join('\n');
+  navigator.clipboard.writeText(urls).then(()=>alert('URLs copiadas!')).catch(()=>{const ta=document.createElement('textarea');ta.value=urls;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();alert('URLs copiadas!');});
+}
+function formatSize(bytes){if(!bytes)return'';if(bytes<1024)return bytes+'B';if(bytes<1048576)return(bytes/1024).toFixed(1)+'KB';return(bytes/1048576).toFixed(1)+'MB';}
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+</script>
+</body>
+</html>
