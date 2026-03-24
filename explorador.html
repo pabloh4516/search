@@ -90,6 +90,19 @@ a:hover{text-decoration:underline;}
 .scan-card .url-status{font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;}
 .url-ok{background:rgba(0,255,136,.15);color:var(--green);}
 .url-fail{background:rgba(255,68,68,.1);color:var(--red);}
+
+/* Hidden media verified cards */
+.hidden-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:12px;}
+.hidden-media-card{background:var(--bg2);border-radius:8px;overflow:hidden;position:relative;border:1px solid var(--red);cursor:pointer;transition:transform .15s;}
+.hidden-media-card:hover{transform:scale(1.02);}
+.hidden-media-card img{width:100%;height:200px;object-fit:cover;display:block;background:var(--bg3);}
+.hidden-media-card video{width:100%;height:200px;object-fit:cover;display:block;background:var(--bg3);}
+.hidden-media-card .info{padding:6px 8px;}
+.hidden-media-card .info .title{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hidden-media-card .info .details{font-size:10px;color:var(--text2);margin-top:2px;display:flex;justify-content:space-between;}
+.badge-hidden{position:absolute;top:6px;left:6px;background:var(--red);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;}
+.section-title{font-size:15px;font-weight:700;margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.section-title .cnt{font-size:12px;color:var(--text2);font-weight:400;}
 .scan-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin:8px 0;padding:10px;background:var(--bg2);border-radius:8px;}
 .scan-stats .stat{display:flex;flex-direction:column;align-items:center;}
 .scan-stats .stat-num{font-size:20px;font-weight:700;}
@@ -134,6 +147,7 @@ a:hover{text-decoration:underline;}
       <input id="searchInput" placeholder="Nome do perfil... (ex: daniela-pimentel)" autofocus>
       <select id="searchType">
         <option value="media">Midias</option>
+        <option value="hidden">Midias Ocultas</option>
         <option value="profiles">Perfis</option>
         <option value="users">Usuarios</option>
       </select>
@@ -216,6 +230,7 @@ async function doSearch(){
 
   try{
     if(type==='media') await searchMedia(q);
+    else if(type==='hidden') await searchHidden(q);
     else if(type==='profiles') await searchProfiles(q);
     else if(type==='users') await searchUsers();
   }catch(e){
@@ -375,6 +390,139 @@ async function loadUserMedia(authorId,name){
   document.getElementById('dlBar').innerHTML='<button class="btn btn-sm btn-dl" onclick="downloadAll(\'all\')">Baixar Tudo ('+all.length+')</button><button class="btn btn-sm btn-outline" onclick="copyUrls()">Copiar URLs</button>';
   curTab='all';
   renderMedia(all);
+}
+
+// ============ HIDDEN SEARCH MODE ============
+
+async function searchHidden(q){
+  document.getElementById('results').innerHTML='<div class="loading"><div class="spinner"></div><p>Buscando perfil e escaneando midias ocultas de "'+esc(q)+'"...<br><span style="font-size:11px;color:var(--text2)">Isso pode levar alguns segundos (varrendo ~600 IDs)</span></p></div>';
+
+  const r=await fetch('/search-hidden?name='+encodeURIComponent(q)+'&radius=300');
+  if(!r.ok){document.getElementById('results').innerHTML='<div class="empty"><p>Erro na busca</p></div>';return;}
+  const data=await r.json();
+
+  if(data.error==='profile not found'){
+    document.getElementById('results').innerHTML='<div class="empty"><p>Perfil "'+esc(q)+'" nao encontrado.</p></div>';
+    return;
+  }
+
+  const pub=data.public||[];
+  const hidden=data.hidden||[];
+  const verified=data.verified||[];
+  const stats=data.stats||{};
+
+  // Status bar
+  document.getElementById('statusBar').style.display='block';
+  document.getElementById('statusBar').innerHTML=
+    'Perfil: <strong>'+esc(data.profile)+'</strong> (Post ID: '+data.center_id+') | '+
+    'Escaneados: <strong>'+stats.scanned+'</strong> | '+
+    'Publicas: <strong style="color:var(--green)">'+pub.length+'</strong> | '+
+    'Ocultas: <strong style="color:var(--red)">'+hidden.length+'</strong> | '+
+    'Verificadas: <strong style="color:var(--orange)">'+verified.length+'</strong>';
+
+  // Tabs
+  const totalMedia=pub.length+verified.length;
+  document.getElementById('cntAll').textContent=totalMedia;
+  document.getElementById('cntImg').textContent=pub.filter(m=>m.mime_type&&m.mime_type.startsWith('image')).length+verified.filter(m=>m.mime_type&&m.mime_type.startsWith('image')).length;
+  document.getElementById('cntVid').textContent=pub.filter(m=>m.mime_type&&m.mime_type.startsWith('video')).length+verified.filter(m=>m.mime_type&&m.mime_type.startsWith('video')).length;
+  document.getElementById('tabsRow').style.display='none';
+
+  // Build combined media array for lightbox
+  allMedia=[];
+  pub.forEach(m=>allMedia.push(m));
+  verified.forEach(v=>allMedia.push({
+    id:v.id,
+    title:{rendered:v.title},
+    source_url:v.url,
+    mime_type:v.mime_type,
+    date:'',
+    media_details:{filesize:v.size},
+    _hidden:true
+  }));
+
+  // Download bar
+  document.getElementById('dlBar').style.display='flex';
+  document.getElementById('dlBar').innerHTML=
+    '<button class="btn btn-sm btn-dl" onclick="downloadAll(\'all\')">Baixar Tudo ('+totalMedia+')</button>'+
+    '<button class="btn btn-sm btn-outline" onclick="copyUrls()">Copiar URLs</button>';
+
+  // Render
+  let h='';
+
+  // Verified hidden media (the main attraction)
+  if(verified.length>0){
+    h+='<div class="section-title" style="color:var(--red)">&#128274; Midias Ocultas Reveladas <span class="cnt">'+verified.length+' arquivo(s) acessivel(is)</span></div>';
+    h+='<div class="hidden-grid">';
+    verified.forEach((v,i)=>{
+      const isVideo=v.mime_type&&v.mime_type.includes('video');
+      const idx=pub.length+i;
+      h+='<div class="hidden-media-card" onclick="openLB('+idx+')">';
+      h+='<span class="badge-hidden">OCULTA</span>';
+      if(isVideo){
+        h+='<video src="'+esc(v.url)+'" preload="metadata" muted></video>';
+      }else{
+        h+='<img src="'+esc(v.url)+'" loading="lazy" onerror="this.style.opacity=0.3">';
+      }
+      h+='<div class="info"><div class="title">'+esc(v.title)+'</div>';
+      h+='<div class="details"><span>ID: '+v.id+'</span><span>'+formatSize(v.size)+'</span></div>';
+      h+='<div class="details"><span style="color:var(--text2)">por '+esc(v.author)+'</span>';
+      h+='<a href="'+esc(v.url)+'" download onclick="event.stopPropagation()" style="font-size:10px">Baixar</a></div>';
+      h+='</div></div>';
+    });
+    h+='</div>';
+  }
+
+  // Hidden but not verified (URL not found)
+  const unverified=hidden.filter(hi=>!verified.find(v=>v.id===hi.id));
+  if(unverified.length>0){
+    h+='<div class="section-title" style="color:var(--orange)">&#128270; Ocultas Sem URL Verificada <span class="cnt">'+unverified.length+' item(ns) - titulo revelado via oEmbed</span></div>';
+    unverified.forEach(item=>{
+      h+='<div class="scan-card hidden-card">';
+      h+='<h4>&#128274; '+esc(item.title||'Sem titulo')+'</h4>';
+      h+='<div class="meta">ID: <strong>'+item.id+'</strong> | Autor: <strong>'+esc(item.author||'?')+'</strong></div>';
+      if(item.guessed_url&&item.guessed_url.length){
+        h+='<div class="urls"><strong>URLs possiveis:</strong>';
+        item.guessed_url.forEach(u=>{
+          h+='<a href="'+esc(u)+'" target="_blank">'+esc(u.split('/').pop())+'</a>';
+        });
+        h+='<button class="btn btn-sm btn-orange" style="margin-top:4px" onclick="testUrls(this,'+JSON.stringify(item.guessed_url).replace(/"/g,'&quot;')+')">Testar URLs</button>';
+        h+='</div>';
+      }
+      h+='</div>';
+    });
+  }
+
+  // Public media
+  if(pub.length>0){
+    h+='<div class="section-title" style="color:var(--green)">&#9989; Midias Publicas <span class="cnt">'+pub.length+' arquivo(s)</span></div>';
+    h+='<div class="media-grid">';
+    pub.forEach((m,i)=>{
+      const isVideo=m.mime_type&&m.mime_type.startsWith('video');
+      const url=m.source_url||'';
+      const title=m.title?.rendered||m.title||'';
+      const date=m.date?m.date.split('T')[0]:'';
+      const size=m.media_details?.filesize?formatSize(m.media_details.filesize):'';
+      h+='<div class="media-card" onclick="openLB('+i+')">';
+      if(isVideo){
+        h+='<span class="badge badge-video">VIDEO</span>';
+        h+='<video src="'+esc(url)+'" preload="metadata" muted></video>';
+      }else{
+        h+='<span class="badge badge-image">FOTO</span>';
+        const thumbUrl=m.media_details?.sizes?.medium?.source_url||url;
+        h+='<img src="'+esc(thumbUrl)+'" loading="lazy">';
+      }
+      h+='<span class="badge-date">'+date+'</span>';
+      h+='<div class="info"><div class="title">'+esc(title)+'</div>';
+      h+='<div class="details"><span>ID: '+m.id+'</span><span>'+size+'</span></div></div></div>';
+    });
+    h+='</div>';
+  }
+
+  if(!verified.length&&!hidden.length&&!pub.length){
+    h='<div class="empty"><p>Nenhuma midia encontrada para "'+esc(q)+'"</p></div>';
+  }
+
+  document.getElementById('results').innerHTML=h;
 }
 
 // ============ SCANNER MODE ============

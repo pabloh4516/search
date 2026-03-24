@@ -51,7 +51,7 @@ def scan_hidden():
     def check_id(mid):
         try:
             with httpx.Client(timeout=8, headers=HEADERS, verify=True) as client:
-                r = client.get(f"{API_BASE}/wp/v2/media/{mid}", params={"_fields": "id,status,source_url,title"})
+                r = client.get(f"{API_BASE}/wp/v2/media/{mid}")
                 if r.status_code == 401:
                     # oEmbed bypass
                     oembed = client.get(
@@ -140,6 +140,153 @@ def check_url():
     except:
         pass
     return jsonify({"exists": False})
+
+
+@app.route("/search-hidden")
+def search_hidden():
+    """Search hidden media for a specific profile name.
+
+    1. Find the job-listing post to get the ID range
+    2. Scan media IDs around that range
+    3. Filter by profile name via oEmbed
+    4. Verify file URLs on static server
+    """
+    import re
+    name = request.args.get("name", "").strip()
+    radius = int(request.args.get("radius", 300))
+    radius = min(radius, 500)
+    if not name:
+        return jsonify({"error": "name required"}), 400
+
+    slug = name.lower().replace(" ", "-")
+
+    # Step 1: Find job-listing to get approximate ID range
+    center_id = None
+    with httpx.Client(timeout=15, headers=HEADERS, verify=True) as client:
+        # Try job-listings search
+        r = client.get(f"{API_BASE}/wp/v2/job-listings", params={"search": name, "per_page": 5})
+        if r.status_code == 200:
+            posts = r.json()
+            for p in posts:
+                title = p.get("title", {}).get("rendered", "").lower()
+                if slug in title.lower().replace(" ", "-"):
+                    center_id = p["id"]
+                    break
+            if not center_id and posts:
+                center_id = posts[0]["id"]
+
+    if not center_id:
+        return jsonify({"error": "profile not found", "hidden": [], "verified": []})
+
+    start = max(1, center_id - radius)
+    end = center_id + radius
+
+    # Step 2: Scan range for hidden media matching the name
+    hidden_matches = []
+    public_matches = []
+    stats = {"scanned": 0, "total_hidden": 0, "total_public": 0, "not_found": 0}
+
+    import time as _time
+
+    def check_id(mid):
+        for attempt in range(3):
+            try:
+                with httpx.Client(timeout=10, headers=HEADERS, verify=True) as c:
+                    r = c.get(f"{API_BASE}/wp/v2/media/{mid}")
+                    if r.status_code == 403:
+                        _time.sleep(1 + attempt)
+                        continue
+                    if r.status_code == 401:
+                        oembed = c.get(
+                            f"{API_BASE}/oembed/1.0/embed",
+                            params={"url": f"{SITE_BASE}/?attachment_id={mid}"}
+                        )
+                        info = {"id": mid, "status": "hidden"}
+                        if oembed.status_code == 200:
+                            data = oembed.json()
+                            info["title"] = data.get("title", "")
+                            info["author"] = data.get("author_name", "")
+                            info["author_url"] = data.get("author_url", "")
+                        return ("hidden", info)
+                    elif r.status_code == 200:
+                        try:
+                            data = r.json()
+                        except Exception:
+                            return ("not_found", None)
+                        return ("public", {
+                            "id": mid,
+                            "status": "public",
+                            "title": data.get("title", {}).get("rendered", ""),
+                            "source_url": data.get("source_url", ""),
+                            "mime_type": data.get("mime_type", ""),
+                            "date": data.get("date", ""),
+                            "media_details": data.get("media_details", {})
+                        })
+                    else:
+                        return ("not_found", None)
+            except:
+                _time.sleep(0.5)
+        return ("error", None)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(check_id, mid): mid for mid in range(start, end + 1)}
+        for future in concurrent.futures.as_completed(futures):
+            result_type, info = future.result()
+            stats["scanned"] += 1
+            if result_type == "hidden":
+                stats["total_hidden"] += 1
+                if info.get("title") and slug in info["title"].lower().replace(" ", "-"):
+                    hidden_matches.append(info)
+            elif result_type == "public":
+                stats["total_public"] += 1
+                title = info.get("title", "").lower().replace(" ", "-")
+                src = info.get("source_url", "").lower()
+                if slug in title or slug in src:
+                    public_matches.append(info)
+            else:
+                stats["not_found"] += 1
+
+    # Step 3: Guess URLs for hidden matches and verify
+    verified = []
+    for item in hidden_matches:
+        title = item.get("title", "")
+        if not title:
+            continue
+        guesses = guess_url(title)
+        item["guessed_url"] = guesses
+        # Verify each guess
+        for url in guesses:
+            try:
+                with httpx.Client(timeout=6, headers=HEADERS, follow_redirects=True, verify=True) as c:
+                    r = c.head(url)
+                    if r.status_code == 200:
+                        ctype = r.headers.get("content-type", "")
+                        verified.append({
+                            "id": item["id"],
+                            "title": title,
+                            "author": item.get("author", ""),
+                            "url": url,
+                            "size": int(r.headers.get("content-length", 0)),
+                            "type": ctype,
+                            "mime_type": "video/mp4" if "video" in ctype or url.endswith(".mp4") else "image/jpeg"
+                        })
+                        break  # first match is enough
+            except:
+                continue
+
+    hidden_matches.sort(key=lambda x: x["id"])
+    public_matches.sort(key=lambda x: x["id"])
+    verified.sort(key=lambda x: x["id"])
+
+    return jsonify({
+        "profile": name,
+        "center_id": center_id,
+        "range": [start, end],
+        "stats": stats,
+        "public": public_matches,
+        "hidden": hidden_matches,
+        "verified": verified
+    })
 
 
 if __name__ == "__main__":
