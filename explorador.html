@@ -409,7 +409,7 @@ async function startScan(){
   document.getElementById('dlBar').style.display='none';
   document.getElementById('results').innerHTML='<div class="loading"><div class="spinner"></div><p>Escaneando IDs '+start+' a '+end+'...</p></div>';
 
-  const batchSize=200;
+  const batchSize=100;
   let allHidden=[];
   let totalPublic=0,totalNotFound=0,totalScanned=0;
   const total=end-start+1;
@@ -419,13 +419,16 @@ async function startScan(){
     const batchEnd=Math.min(batchStart+batchSize-1,end);
     try{
       const r=await fetch('/scan-hidden?start='+batchStart+'&end='+batchEnd);
-      const data=await r.json();
-      allHidden.push(...data.hidden);
-      totalPublic+=data.public;
-      totalNotFound+=data.not_found;
-      totalScanned+=data.scanned;
-    }catch(e){console.error(e);}
-    const pct=Math.min(100,Math.round((totalScanned/total)*100));
+      if(!r.ok){console.error('Scan batch error:',r.status);continue;}
+      const text=await r.text();
+      if(!text||!text.trim()){continue;}
+      const data=JSON.parse(text);
+      allHidden.push(...(data.hidden||[]));
+      totalPublic+=(data.public||0);
+      totalNotFound+=(data.not_found||0);
+      totalScanned+=(data.scanned||0);
+    }catch(e){console.error('Scan error:',e);totalScanned+=batchSize;}
+    const pct=Math.min(100,Math.round(((batchStart-start+batchSize)/total)*100));
     document.getElementById('scanFill').style.width=pct+'%';
   }
 

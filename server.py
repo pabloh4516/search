@@ -18,6 +18,12 @@ def index():
     return send_from_directory(BASE_DIR, "explorador.html")
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return Response(status=204)
+
+
+
 @app.route("/api/<path:path>")
 def proxy(path):
     url = f"{API_BASE}/{path}"
@@ -38,7 +44,7 @@ def scan_hidden():
     """Scan a range of media IDs for hidden (401) items and reveal via oEmbed."""
     start = int(request.args.get("start", 1))
     end = int(request.args.get("end", start + 100))
-    end = min(end, start + 500)  # max 500 per request
+    end = min(end, start + 200)  # max 200 per request (avoid timeout)
 
     results = {"hidden": [], "public": 0, "not_found": 0, "scanned": 0}
 
@@ -76,7 +82,7 @@ def scan_hidden():
         except:
             return ("error", None)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(check_id, mid): mid for mid in range(start, end + 1)}
         for future in concurrent.futures.as_completed(futures):
             result_type, info = future.result()
