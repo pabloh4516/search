@@ -231,7 +231,12 @@ async function searchMedia(q){
     if(!r.ok)break;
     const data=await r.json();
     if(!data.length)break;
-    const filtered=data.filter(m=>(m.source_url||'').toLowerCase().includes(q.toLowerCase().replace(/\s+/g,'-')));
+    const qLower=q.toLowerCase().replace(/\s+/g,'-');
+    const filtered=data.filter(m=>{
+      const url=(m.source_url||'').toLowerCase();
+      const title=(m.title?.rendered||'').toLowerCase();
+      return url.includes(qLower)||title.includes(qLower)||url.includes(q.toLowerCase())||title.includes(q.toLowerCase());
+    });
     all.push(...filtered);
     const total=r.headers.get('X-WP-TotalPages');
     if(!total||page>=parseInt(total))break;
