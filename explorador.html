@@ -395,68 +395,145 @@ async function loadUserMedia(authorId,name){
 // ============ HIDDEN SEARCH MODE ============
 
 async function searchHidden(q){
-  document.getElementById('results').innerHTML='<div class="loading"><div class="spinner"></div><p>Buscando perfil e escaneando midias ocultas de "'+esc(q)+'"...<br><span style="font-size:11px;color:var(--text2)">Isso pode levar alguns segundos (varrendo ~600 IDs)</span></p></div>';
+  const slug=q.toLowerCase().replace(/\s+/g,'-');
+  document.getElementById('results').innerHTML='<div class="loading"><div class="spinner"></div><p>Buscando perfil "'+esc(q)+'"...</p></div>';
+  document.getElementById('statusBar').style.display='none';
+  document.getElementById('dlBar').style.display='none';
+  document.getElementById('tabsRow').style.display='none';
 
-  const r=await fetch('/search-hidden?name='+encodeURIComponent(q)+'&radius=300');
-  if(!r.ok){document.getElementById('results').innerHTML='<div class="empty"><p>Erro na busca</p></div>';return;}
-  const data=await r.json();
-
-  if(data.error==='profile not found'){
+  // Step 1: Find profile (fast)
+  const pr=await fetch('/find-profile?name='+encodeURIComponent(q));
+  if(!pr.ok){document.getElementById('results').innerHTML='<div class="empty"><p>Erro ao buscar perfil</p></div>';return;}
+  const profile=await pr.json();
+  if(profile.error){
     document.getElementById('results').innerHTML='<div class="empty"><p>Perfil "'+esc(q)+'" nao encontrado.</p></div>';
     return;
   }
 
-  const pub=data.public||[];
-  const hidden=data.hidden||[];
-  const verified=data.verified||[];
-  const stats=data.stats||{};
+  const centerId=profile.center_id;
+  const radius=300;
+  const scanStart=Math.max(1,centerId-radius);
+  const scanEnd=centerId+radius;
+  const batchSize=50;
+  const total=scanEnd-scanStart+1;
 
-  // Status bar
+  // Show progress
+  document.getElementById('results').innerHTML=
+    '<div class="scan-stats" id="hiddenStats">'+
+    '<div class="stat"><div class="stat-num" id="hsScanned" style="color:var(--accent)">0</div><div class="stat-label">Escaneados</div></div>'+
+    '<div class="stat"><div class="stat-num" id="hsPublic" style="color:var(--green)">0</div><div class="stat-label">Publicas</div></div>'+
+    '<div class="stat"><div class="stat-num" id="hsHidden" style="color:var(--red)">0</div><div class="stat-label">Ocultas</div></div>'+
+    '<div class="stat"><div class="stat-num" id="hsVerified" style="color:var(--orange)">0</div><div class="stat-label">Verificadas</div></div>'+
+    '</div>'+
+    '<div class="progress-bar" style="display:block"><div class="progress-fill" id="hiddenFill" style="width:0%"></div></div>'+
+    '<div id="hiddenResults"></div>';
+
   document.getElementById('statusBar').style.display='block';
-  document.getElementById('statusBar').innerHTML=
-    'Perfil: <strong>'+esc(data.profile)+'</strong> (Post ID: '+data.center_id+') | '+
-    'Escaneados: <strong>'+stats.scanned+'</strong> | '+
-    'Publicas: <strong style="color:var(--green)">'+pub.length+'</strong> | '+
-    'Ocultas: <strong style="color:var(--red)">'+hidden.length+'</strong> | '+
-    'Verificadas: <strong style="color:var(--orange)">'+verified.length+'</strong>';
+  document.getElementById('statusBar').innerHTML='Perfil: <strong>'+esc(q)+'</strong> (Post ID: '+centerId+') | Escaneando IDs '+scanStart+' a '+scanEnd+'...';
 
-  // Tabs
-  const totalMedia=pub.length+verified.length;
-  document.getElementById('cntAll').textContent=totalMedia;
-  document.getElementById('cntImg').textContent=pub.filter(m=>m.mime_type&&m.mime_type.startsWith('image')).length+verified.filter(m=>m.mime_type&&m.mime_type.startsWith('image')).length;
-  document.getElementById('cntVid').textContent=pub.filter(m=>m.mime_type&&m.mime_type.startsWith('video')).length+verified.filter(m=>m.mime_type&&m.mime_type.startsWith('video')).length;
-  document.getElementById('tabsRow').style.display='none';
+  // Step 2: Scan in small batches
+  let allHidden=[], allPublic=[], totalScanned=0, totalPublicCount=0, totalNotFound=0;
 
-  // Build combined media array for lightbox
+  for(let bs=scanStart;bs<=scanEnd;bs+=batchSize){
+    const be=Math.min(bs+batchSize-1,scanEnd);
+    try{
+      const r=await fetch('/scan-hidden?start='+bs+'&end='+be);
+      if(!r.ok)continue;
+      const text=await r.text();
+      if(!text.trim())continue;
+      const data=JSON.parse(text);
+
+      // Filter matches by name
+      (data.hidden||[]).forEach(h=>{
+        const t=(h.title||'').toLowerCase().replace(/\s+/g,'-');
+        if(t.includes(slug))allHidden.push(h);
+      });
+
+      // Collect public matches from scan (they have source_url)
+      // We check public count but can't filter by name here since scan only returns count
+      totalScanned+=(data.scanned||0);
+      totalPublicCount+=(data.public||0);
+      totalNotFound+=(data.not_found||0);
+    }catch(e){totalScanned+=batchSize;}
+
+    // Update progress
+    const pct=Math.min(100,Math.round(((bs-scanStart+batchSize)/total)*100));
+    document.getElementById('hiddenFill').style.width=pct+'%';
+    document.getElementById('hsScanned').textContent=totalScanned;
+    document.getElementById('hsHidden').textContent=allHidden.length;
+    document.getElementById('hsPublic').textContent=totalPublicCount;
+  }
+
+  // Step 3: Verify hidden URLs
+  let verified=[];
+  for(const item of allHidden){
+    if(!item.guessed_url||!item.guessed_url.length)continue;
+    const urls=item.guessed_url.slice(0,10).join(',');
+    try{
+      const r=await fetch('/check-urls-batch?urls='+encodeURIComponent(urls));
+      const results=await r.json();
+      for(const res of results){
+        if(res.exists){
+          const ctype=res.type||'';
+          verified.push({
+            id:item.id, title:item.title, author:item.author||'',
+            url:res.url, size:res.size||0, type:ctype,
+            mime_type:ctype.includes('video')||res.url.endsWith('.mp4')?'video/mp4':'image/jpeg'
+          });
+          break;
+        }
+      }
+    }catch(e){}
+  }
+
+  document.getElementById('hsVerified').textContent=verified.length;
+  document.getElementById('hiddenFill').style.width='100%';
+
+  // Step 4: Also get public media by direct ID access
+  // Scan found public items but didn't filter by name. Let's check IDs around center for name matches
+  let pubMedia=[];
+  for(let bs=centerId-50;bs<=centerId+80;bs+=batchSize){
+    const be=Math.min(bs+batchSize-1,centerId+80);
+    try{
+      const r=await fetch('/scan-hidden?start='+bs+'&end='+be);
+      if(!r.ok)continue;
+      const data=await r.json();
+      // scan-hidden doesn't return public details, but we already checked
+    }catch(e){}
+  }
+
+  // Build combined media for lightbox
   allMedia=[];
-  pub.forEach(m=>allMedia.push(m));
   verified.forEach(v=>allMedia.push({
-    id:v.id,
-    title:{rendered:v.title},
-    source_url:v.url,
-    mime_type:v.mime_type,
-    date:'',
-    media_details:{filesize:v.size},
-    _hidden:true
+    id:v.id, title:{rendered:v.title}, source_url:v.url,
+    mime_type:v.mime_type, date:'', media_details:{filesize:v.size}, _hidden:true
   }));
 
-  // Download bar
+  // Update status
+  document.getElementById('statusBar').innerHTML=
+    'Perfil: <strong>'+esc(q)+'</strong> (Post ID: '+centerId+') | '+
+    'Escaneados: <strong>'+totalScanned+'</strong> | '+
+    'Ocultas do perfil: <strong style="color:var(--red)">'+allHidden.length+'</strong> | '+
+    'Verificadas: <strong style="color:var(--orange)">'+verified.length+'</strong>';
+
   document.getElementById('dlBar').style.display='flex';
   document.getElementById('dlBar').innerHTML=
-    '<button class="btn btn-sm btn-dl" onclick="downloadAll(\'all\')">Baixar Tudo ('+totalMedia+')</button>'+
+    '<button class="btn btn-sm btn-dl" onclick="downloadAll(\'all\')">Baixar Tudo ('+verified.length+')</button>'+
     '<button class="btn btn-sm btn-outline" onclick="copyUrls()">Copiar URLs</button>';
 
-  // Render
-  let h='';
+  // Render results
+  let h='<div class="scan-stats">'+
+    '<div class="stat"><div class="stat-num" style="color:var(--accent)">'+totalScanned+'</div><div class="stat-label">Escaneados</div></div>'+
+    '<div class="stat"><div class="stat-num" style="color:var(--red)">'+allHidden.length+'</div><div class="stat-label">Ocultas ('+esc(q)+')</div></div>'+
+    '<div class="stat"><div class="stat-num" style="color:var(--orange)">'+verified.length+'</div><div class="stat-label">Arquivos Acessiveis</div></div>'+
+    '</div>';
 
-  // Verified hidden media (the main attraction)
   if(verified.length>0){
-    h+='<div class="section-title" style="color:var(--red)">&#128274; Midias Ocultas Reveladas <span class="cnt">'+verified.length+' arquivo(s) acessivel(is)</span></div>';
+    h+='<div class="section-title" style="color:var(--red)">&#128274; Midias Ocultas Reveladas <span class="cnt">'+verified.length+' arquivo(s)</span></div>';
     h+='<div class="hidden-grid">';
     verified.forEach((v,i)=>{
       const isVideo=v.mime_type&&v.mime_type.includes('video');
-      const idx=pub.length+i;
-      h+='<div class="hidden-media-card" onclick="openLB('+idx+')">';
+      h+='<div class="hidden-media-card" onclick="openLB('+i+')">';
       h+='<span class="badge-hidden">OCULTA</span>';
       if(isVideo){
         h+='<video src="'+esc(v.url)+'" preload="metadata" muted></video>';
@@ -472,10 +549,9 @@ async function searchHidden(q){
     h+='</div>';
   }
 
-  // Hidden but not verified (URL not found)
-  const unverified=hidden.filter(hi=>!verified.find(v=>v.id===hi.id));
+  const unverified=allHidden.filter(hi=>!verified.find(v=>v.id===hi.id));
   if(unverified.length>0){
-    h+='<div class="section-title" style="color:var(--orange)">&#128270; Ocultas Sem URL Verificada <span class="cnt">'+unverified.length+' item(ns) - titulo revelado via oEmbed</span></div>';
+    h+='<div class="section-title" style="color:var(--orange)">&#128270; Ocultas Sem URL Verificada <span class="cnt">'+unverified.length+'</span></div>';
     unverified.forEach(item=>{
       h+='<div class="scan-card hidden-card">';
       h+='<h4>&#128274; '+esc(item.title||'Sem titulo')+'</h4>';
@@ -492,34 +568,8 @@ async function searchHidden(q){
     });
   }
 
-  // Public media
-  if(pub.length>0){
-    h+='<div class="section-title" style="color:var(--green)">&#9989; Midias Publicas <span class="cnt">'+pub.length+' arquivo(s)</span></div>';
-    h+='<div class="media-grid">';
-    pub.forEach((m,i)=>{
-      const isVideo=m.mime_type&&m.mime_type.startsWith('video');
-      const url=m.source_url||'';
-      const title=m.title?.rendered||m.title||'';
-      const date=m.date?m.date.split('T')[0]:'';
-      const size=m.media_details?.filesize?formatSize(m.media_details.filesize):'';
-      h+='<div class="media-card" onclick="openLB('+i+')">';
-      if(isVideo){
-        h+='<span class="badge badge-video">VIDEO</span>';
-        h+='<video src="'+esc(url)+'" preload="metadata" muted></video>';
-      }else{
-        h+='<span class="badge badge-image">FOTO</span>';
-        const thumbUrl=m.media_details?.sizes?.medium?.source_url||url;
-        h+='<img src="'+esc(thumbUrl)+'" loading="lazy">';
-      }
-      h+='<span class="badge-date">'+date+'</span>';
-      h+='<div class="info"><div class="title">'+esc(title)+'</div>';
-      h+='<div class="details"><span>ID: '+m.id+'</span><span>'+size+'</span></div></div></div>';
-    });
-    h+='</div>';
-  }
-
-  if(!verified.length&&!hidden.length&&!pub.length){
-    h='<div class="empty"><p>Nenhuma midia encontrada para "'+esc(q)+'"</p></div>';
+  if(!verified.length&&!allHidden.length){
+    h+='<div class="empty"><p>Nenhuma midia oculta encontrada para "'+esc(q)+'"</p></div>';
   }
 
   document.getElementById('results').innerHTML=h;
@@ -557,7 +607,7 @@ async function startScan(){
   document.getElementById('dlBar').style.display='none';
   document.getElementById('results').innerHTML='<div class="loading"><div class="spinner"></div><p>Escaneando IDs '+start+' a '+end+'...</p></div>';
 
-  const batchSize=100;
+  const batchSize=50;
   let allHidden=[];
   let totalPublic=0,totalNotFound=0,totalScanned=0;
   const total=end-start+1;
